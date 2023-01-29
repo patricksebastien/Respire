@@ -12,19 +12,24 @@ bool debugSerial = true;
 #include <MicroOscUdp.h>          // Tof's MicroOSCUDP: https://github.com/thomasfredericks/MicroOsc > git checkout a02fa6fc4cd31b91247d93e0ed5e9c989297a127
 #include <WiFiUdp.h>
 #include <ESPmDNS.h>
-
-#include "accel.h"
+#include <EEPROM.h>
 
 bool isConnectedW = false;
 bool touchoscbridgeFound = false;
 IPAddress sendIp(192, 168, 0, 255); // <- default not really use, we are using Bonjour (mDNS) to find IP and PORT of touchoscbridge
 unsigned int sendPort = 12101; // <- touchosc port
+const long period = 100; //time between samples in milliseconds - 5
+long startMillis = 0;
 WiFiUDP udp;
 MicroOscUdp<1024> oscUdp(&udp, sendIp, sendPort);
 
 //define your default values here
 char cc_breathe_in[40];
 char cc_breathe_out[40];
+String eeprom_cc_breathe_out;
+String eeprom_cc_breathe_in;
+
+#include "accel.h"
 
 //flag for saving data
 bool shouldSaveConfig = false;
@@ -37,9 +42,11 @@ void saveConfigCallback () {
 
 
 void setup() {
-  // put your setup code here, to run once:
   Serial.begin(115200);
-  Serial.println();
+  while (!Serial)
+  {
+  }
+  EEPROM.begin(512); //Initialasing EEPROM
 
   pinMode(TRIGGER_PIN, INPUT_PULLUP);
 
@@ -48,8 +55,8 @@ void setup() {
   #endif
 
   // CUSTOM CONFIGURATION
-  WiFiManagerParameter custom_cc_breathe_in("MIDI", "Midi CC value for breathe in (ie: cutoff is MIDI CC: 74)", cc_breathe_in, 40);
-  WiFiManagerParameter custom_cc_breathe_out("MIDI", "Midi CC value for breathe out (ie: Breath Controller is MIDI CC: 2)", cc_breathe_out, 40);
+  WiFiManagerParameter custom_cc_breathe_in("MIDICCBI", "Midi CC value for breathe in (ie: cutoff is MIDI CC: 74)", cc_breathe_in, 40);
+  WiFiManagerParameter custom_cc_breathe_out("MIDICCBO", "Midi CC value for breathe out (ie: Breath Controller is MIDI CC: 2)", cc_breathe_out, 40);
 
   //WiFiManager
   WiFiManager wifiManager;
@@ -57,10 +64,9 @@ void setup() {
   if(digitalRead(TRIGGER_PIN) == LOW) {
   wifiManager.resetSettings();
   }
-  // debug force reset
+  //reset settings - for testing
   //wifiManager.resetSettings();
 
-  
   //set config save notify callback
   wifiManager.setSaveConfigCallback(saveConfigCallback);
   
@@ -68,21 +74,8 @@ void setup() {
   wifiManager.addParameter(&custom_cc_breathe_in);
   wifiManager.addParameter(&custom_cc_breathe_out);
 
-  //reset settings - for testing
-  //wifiManager.resetSettings();
-
-  //set minimu quality of signal so it ignores AP's under that quality
-  //defaults to 8%
-  //wifiManager.setMinimumSignalQuality();
-
-  //sets timeout until configuration portal gets turned off
-  //useful to make it all retry or go to sleep
-  //in seconds
-  //wifiManager.setTimeout(120);
-
   //fetches ssid and pass and tries to connect
   //if it does not connect it starts an access point with the specified name
-  //here  "AutoConnectAP"
   //and goes into a blocking loop awaiting configuration
   wifiManager.setConnectTimeout(20);
   if (!wifiManager.autoConnect("Respire")) {
@@ -97,19 +90,63 @@ void setup() {
   Serial.println("connected...yeey :)");
   isConnectedW = true;
 
-  //read updated parameters
-  strcpy(cc_breathe_in, custom_cc_breathe_in.getValue());
-  strcpy(cc_breathe_out, custom_cc_breathe_out.getValue());
-  Serial.println("The values in the file are: ");
-  Serial.println("\tcc_breathe_in : " + String(cc_breathe_in));
-  Serial.println("\tcc_breathe_out : " + String(cc_breathe_out));
-
   //save the custom parameters to FS
   if (shouldSaveConfig) {
     Serial.println("saving config");
-    Serial.println(cc_breathe_in);
-    Serial.println(cc_breathe_out);
-    //TODO save in eeprom....
+    strcpy(cc_breathe_in, custom_cc_breathe_in.getValue());
+    strcpy(cc_breathe_out, custom_cc_breathe_out.getValue());
+    
+    if (strlen(cc_breathe_in) > 0) {
+      if (debugSerial) {
+        Serial.println("clearing eeprom");
+      }
+      for (int i = 0; i < 96; ++i) {
+        EEPROM.write(i, 0);
+      }
+      if (debugSerial) {
+        Serial.println("writing eeprom cc_breathe_in:");
+      }
+      for (int i = 0; i < strlen(cc_breathe_in); ++i)
+      {
+        EEPROM.write(i, cc_breathe_in[i]);
+        if (debugSerial) {
+          Serial.print("Wrote: ");
+          Serial.println(cc_breathe_in[i]);
+        }
+      }
+      if (debugSerial) {
+        Serial.println("writing eeprom cc_breathe_out:");
+      }
+      for (int i = 0; i < strlen(cc_breathe_out); ++i)
+      {
+        EEPROM.write(32 + i, cc_breathe_out[i]);
+        if (debugSerial) {
+          Serial.print("Wrote: ");
+          Serial.println(cc_breathe_out[i]);
+        }
+      }
+
+      EEPROM.commit();
+    }
+  }
+
+  // READ EEPROM
+  for (int i = 0; i < 32; ++i)
+  {
+    eeprom_cc_breathe_in += char(EEPROM.read(i));
+  }
+  for (int i = 32; i < 96; ++i)
+  {
+    eeprom_cc_breathe_out += char(EEPROM.read(i));
+  }
+
+  if (debugSerial) {
+    Serial.println();
+    Serial.println("Reading EEPROM");
+    Serial.print("cc_breathe_in: ");
+    Serial.println(eeprom_cc_breathe_in);
+    Serial.print("cc_breathe_out: ");
+    Serial.println(eeprom_cc_breathe_out);
   }
 
   Serial.println("local ip");
@@ -119,16 +156,18 @@ void setup() {
 }
 
 void loop() {
+  startMillis = millis();
   if(isConnectedW) {
-    Serial.println("...");
-
     // trying to search for touchosc bridge (via bonjour)
     if(!touchoscbridgeFound) {
         browseService("touchoscbridge", "udp");
     } else {
       // found touchosc bridge, send sensors values via OSC midi
-      Serial.println("Sending sensors values");
+      #if defined Accelerometer
+        readAccelerometer();
+      #endif
 
+      /*
       // Example
       uint8_t midi[4];
       midi[0] = 0;
@@ -136,13 +175,10 @@ void loop() {
       midi[2] = 10;  // expression
       midi[3] = 176;
       oscUdp.sendMessage("/midi",  "m",  midi);
-
-      #if defined Accelerometer
-        readAccelerometer();
-      #endif
+      */
     }
   }
-  delay(500); // too long refacto implementation
+  while ((millis() - startMillis) < period);
 }
 
 
