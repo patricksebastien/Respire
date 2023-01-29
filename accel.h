@@ -99,14 +99,13 @@ bool readAccelerometer() {
   y = map(y,-320,320,0,127);
   z = map(z,-320,320,0,127);
 
-
-    // Output x,y,z values 
-    Serial.print("values of X , Y , Z: ");
-    Serial.print(x);
-    Serial.print(" , ");
-    Serial.print(y);
-    Serial.print(" , ");
-    Serial.println(z);
+  // Output x,y,z values 
+  Serial.print("values of X , Y , Z: ");
+  Serial.print(x);
+  Serial.print(" , ");
+  Serial.print(y);
+  Serial.print(" , ");
+  Serial.println(z);
   
   double xyz[3];
   //double ax,ay,az;
@@ -118,6 +117,19 @@ bool readAccelerometer() {
   aInty = map(aInty,-200,200,0,127);
   aIntz = map(aIntz,-200,200,0,127);
 
+  uint8_t midi[4];
+  midi[0] = 0;
+  midi[1] = aIntx;
+  midi[2] = atoi(eeprom_cc_breathe_out.c_str());  // expression
+  midi[3] = 176;
+  oscUdp.sendMessage("/midi",  "m",  midi);
+  
+  midi[0] = 0;
+  midi[1] = aInty;
+  midi[2] = atoi(eeprom_cc_breathe_in.c_str()); // breath controller
+  midi[3] = 176;
+  oscUdp.sendMessage("/midi",  "m",  midi);
+
 //    Serial.print("X=");
 //    Serial.print(aIntx);
 //    Serial.println(" g");
@@ -128,9 +140,7 @@ bool readAccelerometer() {
 //    Serial.print(aIntz);
 //    Serial.println(" g");
 //    Serial.println("**********************");
-    delay(1); // 50
     
- 
   return 0;
 } // End readAccelerometer
  #endif
