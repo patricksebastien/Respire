@@ -120,13 +120,13 @@ bool readAccelerometer() {
   uint8_t midi[4];
   midi[0] = 0;
   midi[1] = aIntx;
-  midi[2] = atoi(eeprom_cc_breathe_out.c_str());  // expression
+  midi[2] = pref_cc_breathe_out;  // expression
   midi[3] = 176;
   oscUdp.sendMessage("/midi",  "m",  midi);
   
   midi[0] = 0;
   midi[1] = aInty;
-  midi[2] = atoi(eeprom_cc_breathe_in.c_str()); // breath controller
+  midi[2] = pref_cc_breathe_in; // breath controller
   midi[3] = 176;
   oscUdp.sendMessage("/midi",  "m",  midi);
 
