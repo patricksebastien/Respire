@@ -8,35 +8,34 @@ bool debugSerial = true;
 #define TRIGGER_PIN 0
 
 // LIBRARIES
+
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include <MicroOscUdp.h>          // Tof's MicroOSCUDP: https://github.com/thomasfredericks/MicroOsc > git checkout a02fa6fc4cd31b91247d93e0ed5e9c989297a127
 #include <WiFiUdp.h>
 #include <ESPmDNS.h>
-#include <EEPROM.h>
+#include <Preferences.h>
 
 bool isConnectedW = false;
 bool touchoscbridgeFound = false;
+bool shouldSaveConfig = false;
 IPAddress sendIp(192, 168, 0, 255); // <- default not really use, we are using Bonjour (mDNS) to find IP and PORT of touchoscbridge
 unsigned int sendPort = 12101; // <- touchosc port
 const long period = 100; //time between samples in milliseconds - 5
 long startMillis = 0;
 WiFiUDP udp;
 MicroOscUdp<1024> oscUdp(&udp, sendIp, sendPort);
+Preferences preferences;
 
 //define your default values here
 char cc_breathe_in[40];
 char cc_breathe_out[40];
-String eeprom_cc_breathe_out;
-String eeprom_cc_breathe_in;
+unsigned short pref_cc_breathe_out;
+unsigned short pref_cc_breathe_in;
 
 #include "accel.h"
 
-//flag for saving data
-bool shouldSaveConfig = false;
-
 //callback notifying us of the need to save config
 void saveConfigCallback () {
-  Serial.println("Should save config");
   shouldSaveConfig = true;
 }
 
@@ -46,7 +45,7 @@ void setup() {
   while (!Serial)
   {
   }
-  EEPROM.begin(512); //Initialasing EEPROM
+  preferences.begin("respire", false);
 
   pinMode(TRIGGER_PIN, INPUT_PULLUP);
 
@@ -55,8 +54,8 @@ void setup() {
   #endif
 
   // CUSTOM CONFIGURATION
-  WiFiManagerParameter custom_cc_breathe_in("MIDICCBI", "Midi CC value for breathe in (ie: cutoff is MIDI CC: 74)", cc_breathe_in, 40);
-  WiFiManagerParameter custom_cc_breathe_out("MIDICCBO", "Midi CC value for breathe out (ie: Breath Controller is MIDI CC: 2)", cc_breathe_out, 40);
+  WiFiManagerParameter custom_cc_breathe_in("MIDICCBI", "<h1>MIDI CC #</h1><div>Midi CC value for breathe in<br /><i>(ie: cutoff is MIDI CC: 74)", cc_breathe_in, 40);
+  WiFiManagerParameter custom_cc_breathe_out("MIDICCBO", "Midi CC value for breathe out<br /><i>(ie: Breath Controller is MIDI CC: 2)</i></div>", cc_breathe_out, 40);
 
   //WiFiManager
   WiFiManager wifiManager;
@@ -87,72 +86,39 @@ void setup() {
   }
 
   //if you get here you have connected to the WiFi
-  Serial.println("connected...yeey :)");
+  if (debugSerial) {
+    Serial.println("Connected...yeey :)");
+  }
   isConnectedW = true;
 
   //save the custom parameters to FS
   if (shouldSaveConfig) {
-    Serial.println("saving config");
+    if (debugSerial) {
+      Serial.println("Saving config");
+    }
     strcpy(cc_breathe_in, custom_cc_breathe_in.getValue());
     strcpy(cc_breathe_out, custom_cc_breathe_out.getValue());
-    
-    if (strlen(cc_breathe_in) > 0) {
-      if (debugSerial) {
-        Serial.println("clearing eeprom");
-      }
-      for (int i = 0; i < 96; ++i) {
-        EEPROM.write(i, 0);
-      }
-      if (debugSerial) {
-        Serial.println("writing eeprom cc_breathe_in:");
-      }
-      for (int i = 0; i < strlen(cc_breathe_in); ++i)
-      {
-        EEPROM.write(i, cc_breathe_in[i]);
-        if (debugSerial) {
-          Serial.print("Wrote: ");
-          Serial.println(cc_breathe_in[i]);
-        }
-      }
-      if (debugSerial) {
-        Serial.println("writing eeprom cc_breathe_out:");
-      }
-      for (int i = 0; i < strlen(cc_breathe_out); ++i)
-      {
-        EEPROM.write(32 + i, cc_breathe_out[i]);
-        if (debugSerial) {
-          Serial.print("Wrote: ");
-          Serial.println(cc_breathe_out[i]);
-        }
-      }
-
-      EEPROM.commit();
-    }
+    preferences.putUShort("cc_breathe_in", atoi(cc_breathe_in));
+    preferences.putUShort("cc_breathe_out", atoi(cc_breathe_out));
   }
-
+  
   // READ EEPROM
-  for (int i = 0; i < 32; ++i)
-  {
-    eeprom_cc_breathe_in += char(EEPROM.read(i));
-  }
-  for (int i = 32; i < 96; ++i)
-  {
-    eeprom_cc_breathe_out += char(EEPROM.read(i));
-  }
-
+  pref_cc_breathe_in = preferences.getUShort("cc_breathe_in", 74);
+  pref_cc_breathe_out = preferences.getUShort("cc_breathe_out", 2);
+  
   if (debugSerial) {
     Serial.println();
     Serial.println("Reading EEPROM");
     Serial.print("cc_breathe_in: ");
-    Serial.println(eeprom_cc_breathe_in);
+    Serial.println(pref_cc_breathe_in);
     Serial.print("cc_breathe_out: ");
-    Serial.println(eeprom_cc_breathe_out);
+    Serial.println(pref_cc_breathe_out);
   }
 
-  Serial.println("local ip");
-  Serial.println(WiFi.localIP());
-
-  
+  if (debugSerial) {
+    Serial.println("local ip");
+    Serial.println(WiFi.localIP());
+  }
 }
 
 void loop() {
