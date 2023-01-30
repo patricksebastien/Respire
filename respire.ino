@@ -5,10 +5,12 @@
 #define useAnalogSensors false
 
 bool debugSerial = true;
+bool forcePortal = false;
 #define TRIGGER_PIN 0
 
 // LIBRARIES
-
+#include <Arduino.h>
+#include <Wire.h>
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager
 #include <MicroOscUdp.h>          // Tof's MicroOSCUDP: https://github.com/thomasfredericks/MicroOsc > git checkout a02fa6fc4cd31b91247d93e0ed5e9c989297a127
 #include <WiFiUdp.h>
@@ -41,6 +43,7 @@ void saveConfigCallback () {
 
 
 void setup() {
+  btStop();
   Serial.begin(115200);
   while (!Serial)
   {
@@ -57,14 +60,20 @@ void setup() {
   WiFiManagerParameter custom_cc_breathe_in("MIDICCBI", "<h1>MIDI CC #</h1><div>Midi CC value for breathe in<br /><i>(ie: cutoff is MIDI CC: 74)", cc_breathe_in, 40);
   WiFiManagerParameter custom_cc_breathe_out("MIDICCBO", "Midi CC value for breathe out<br /><i>(ie: Breath Controller is MIDI CC: 2)</i></div>", cc_breathe_out, 40);
 
-  //WiFiManager
+  // WiFiManager
   WiFiManager wifiManager;
 
-  if(digitalRead(TRIGGER_PIN) == LOW) {
-  wifiManager.resetSettings();
+  if(digitalRead(TRIGGER_PIN) == LOW || forcePortal) {
+    wifiManager.resetSettings();
   }
-  //reset settings - for testing
-  //wifiManager.resetSettings();
+
+  // Bonjour
+  if (!MDNS.begin("Respire")) {
+      Serial.println("Error setting up MDNS responder!");
+      while(1){
+          delay(1000);
+      }
+  }
 
   //set config save notify callback
   wifiManager.setSaveConfigCallback(saveConfigCallback);
