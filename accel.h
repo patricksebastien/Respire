@@ -1,4 +1,3 @@
-#if defined Accelerometer
 #include <ADXL345.h>
 ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 double ax,ay,az; // actual acceleration on all axis
@@ -64,7 +63,7 @@ void accelerometerSetup(){
   //look of tap movement on this axes - 1 == on; 0 == off
   adxl.setTapDetectionOnX(0);
   adxl.setTapDetectionOnY(0);
-  adxl.setTapDetectionOnZ(0); // 1 
+  adxl.setTapDetectionOnZ(1); // 1 
  
   //set values for what is a tap, and what is a double tap (0-255)
   adxl.setTapThreshold(50); //62.5mg per increment
@@ -85,28 +84,21 @@ void accelerometerSetup(){
   adxl.setInterruptMapping( ADXL345_INT_INACTIVITY_BIT,   ADXL345_INT1_PIN );
  
   //register interrupt actions - 1 == on; 0 == off  
-  adxl.setInterrupt( ADXL345_INT_SINGLE_TAP_BIT, 0);
-  adxl.setInterrupt( ADXL345_INT_DOUBLE_TAP_BIT, 0);
-  adxl.setInterrupt( ADXL345_INT_FREE_FALL_BIT,  0);
-  adxl.setInterrupt( ADXL345_INT_ACTIVITY_BIT,   0);
-  adxl.setInterrupt( ADXL345_INT_INACTIVITY_BIT, 0);
+  adxl.setInterrupt( ADXL345_INT_SINGLE_TAP_BIT, 1);
+  adxl.setInterrupt( ADXL345_INT_DOUBLE_TAP_BIT, 1);
+  adxl.setInterrupt( ADXL345_INT_FREE_FALL_BIT,  1);
+  adxl.setInterrupt( ADXL345_INT_ACTIVITY_BIT,   1);
+  adxl.setInterrupt( ADXL345_INT_INACTIVITY_BIT, 1);
  
 }
 
 bool readAccelerometer() {
+  
   adxl.readXYZ(&x, &y, &z); //read the accelerometer values and store them in variables  x,y,z
   x = map(x,-320,320,0,127); // Should be 355 degrees but in practice I don't see values above 320...
   y = map(y,-320,320,0,127);
   z = map(z,-320,320,0,127);
 
-  // Output x,y,z values 
-  Serial.print("values of X , Y , Z: ");
-  Serial.print(x);
-  Serial.print(" , ");
-  Serial.print(y);
-  Serial.print(" , ");
-  Serial.println(z);
-  
   double xyz[3];
   //double ax,ay,az;
   adxl.getAcceleration(xyz);
@@ -118,29 +110,89 @@ bool readAccelerometer() {
   aIntz = map(aIntz,-200,200,0,127);
 
   uint8_t midi[4];
-  midi[0] = 0;
-  midi[1] = aIntx;
-  midi[2] = pref_cc_breathe_out;  // expression
-  midi[3] = 176;
-  oscUdp.sendMessage("/midi",  "m",  midi);
+  if (sendSensorData) {
+    // midi[1] = aInty; not useful in my case
+    switch (sendAccel) {
+        case 0:
+          // x
+          midi[0] = 0;
+          midi[1] = aIntx;
+          midi[2] = 3;  // expression
+          midi[3] = 176;
+          oscUdp.sendMessage("/midi",  "m",  midi);
+        break;
+        case 1:
+          // y
+          midi[0] = 0;
+          midi[1] = aIntz;
+          midi[2] = 4; // breath controller
+          midi[3] = 176;
+          oscUdp.sendMessage("/midi",  "m",  midi);
+        break;
+        case 2:
+          // all
+          midi[0] = 0;
+          midi[1] = aIntx;
+          midi[2] = 3;  // expression
+          midi[3] = 176;
+          oscUdp.sendMessage("/midi",  "m",  midi);
   
-  midi[0] = 0;
-  midi[1] = aInty;
-  midi[2] = pref_cc_breathe_in; // breath controller
-  midi[3] = 176;
-  oscUdp.sendMessage("/midi",  "m",  midi);
+          midi[0] = 0;
+          midi[1] = aIntz;
+          midi[2] = 4; // breath controller
+          midi[3] = 176;
+          oscUdp.sendMessage("/midi",  "m",  midi);
+        break;
+      }
+  }
+  
+  if (debugSerial) {
+    // Output x,y,z values
+    switch (sendAccel) {
+      case 0:
+        Serial.print("values of X: ");
+        Serial.println(aIntx);
+      break;
+      case 1:
+        Serial.print("values of y: ");
+        Serial.println(aInty);
+      break;
+      case 2:
+        Serial.print("values of z: ");
+        Serial.println(aIntz);
+      break;
+      case 3:
+        Serial.print("values of X , Y , Z: ");
+        Serial.print(aIntx);
+        Serial.print(" , ");
+        Serial.print(aInty);
+        Serial.print(" , ");
+        Serial.println(aIntz);
+      break;
+    }
+  }
 
-//    Serial.print("X=");
-//    Serial.print(aIntx);
-//    Serial.println(" g");
-//    Serial.print("Y=");
-//    Serial.print(aInty);
-//    Serial.println(" g");
-//    Serial.print("Z=");
-//    Serial.print(aIntz);
-//    Serial.println(" g");
-//    Serial.println("**********************");
-    
+
+    // check interruptsource
+    byte interrupts = adxl.getInterruptSource();
+  
+   //double tap
+   if(adxl.triggered(interrupts, ADXL345_DOUBLE_TAP)){
+     if (debugSerial) {
+        Serial.println("double tap");
+     }
+     sendSensorData = !sendSensorData;
+   }
+ 
+   //tap
+   if(adxl.triggered(interrupts, ADXL345_SINGLE_TAP)){
+    // send only x, y, z or all of them (pressure sensor is always sent)
+    if (debugSerial) {
+      Serial.println("single tap");
+    }
+    //sendSensorData = !sendSensorData;
+    sendAccel = (sendAccel + 1) % 4;
+   } 
+  
   return 0;
 } // End readAccelerometer
- #endif
