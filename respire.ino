@@ -1,11 +1,10 @@
-#define Accelerometer true
-#define PressureSensor false
-#define Display false
-#define useButton false
-#define useAnalogSensors false
+// todo pref for CC accel, filtering and calibration, split z,x to 4 cc
 
-bool debugSerial = true;
+bool useAccelerometerSensor = true;
+bool usePressureSensor = true;
+bool debugSerial = false;
 bool forcePortal = false;
+const long period = 5; //time between samples in milliseconds - 5
 #define TRIGGER_PIN 0
 
 // LIBRARIES
@@ -16,17 +15,20 @@ bool forcePortal = false;
 #include <WiFiUdp.h>
 #include <ESPmDNS.h>
 #include <Preferences.h>
+#include "microsmooth.h"          // included https://github.com/asheeshr/Microsmooth
 
 bool isConnectedW = false;
 bool touchoscbridgeFound = false;
 bool shouldSaveConfig = false;
+bool sendSensorData = true;
+int sendAccel = 2; // send xyz
 IPAddress sendIp(192, 168, 0, 255); // <- default not really use, we are using Bonjour (mDNS) to find IP and PORT of touchoscbridge
 unsigned int sendPort = 12101; // <- touchosc port
-const long period = 100; //time between samples in milliseconds - 5
 long startMillis = 0;
 WiFiUDP udp;
 MicroOscUdp<1024> oscUdp(&udp, sendIp, sendPort);
 Preferences preferences;
+uint16_t *ptrblow;
 
 //define your default values here
 char cc_breathe_in[40];
@@ -35,6 +37,7 @@ unsigned short pref_cc_breathe_out;
 unsigned short pref_cc_breathe_in;
 
 #include "accel.h"
+#include "blowsuck.h"
 
 //callback notifying us of the need to save config
 void saveConfigCallback () {
@@ -52,9 +55,16 @@ void setup() {
 
   pinMode(TRIGGER_PIN, INPUT_PULLUP);
 
-  #if defined Accelerometer
+  // filter
+  ptrblow = ms_init(EMA);
+  if(ptrblow == NULL) Serial.println("***************No memory*******************8");
+
+  if (useAccelerometerSensor) {
     accelerometerSetup();
-  #endif
+  }
+  if (usePressureSensor) {
+    pressureSensorSetup();
+  }
 
   // CUSTOM CONFIGURATION
   WiFiManagerParameter custom_cc_breathe_in("MIDICCBI", "<h1>MIDI CC #</h1><div>Midi CC value for breathe in<br /><i>(ie: cutoff is MIDI CC: 74)", cc_breathe_in, 40);
@@ -63,21 +73,21 @@ void setup() {
   // WiFiManager
   WiFiManager wifiManager;
 
-  if(digitalRead(TRIGGER_PIN) == LOW || forcePortal) {
+  if (digitalRead(TRIGGER_PIN) == LOW || forcePortal) {
     wifiManager.resetSettings();
   }
 
   // Bonjour
   if (!MDNS.begin("Respire")) {
-      Serial.println("Error setting up MDNS responder!");
-      while(1){
-          delay(1000);
-      }
+    Serial.println("Error setting up MDNS responder!");
+    while (1) {
+      delay(1000);
+    }
   }
 
   //set config save notify callback
   wifiManager.setSaveConfigCallback(saveConfigCallback);
-  
+
   //add all your parameters here
   wifiManager.addParameter(&custom_cc_breathe_in);
   wifiManager.addParameter(&custom_cc_breathe_out);
@@ -110,11 +120,11 @@ void setup() {
     preferences.putUShort("cc_breathe_in", atoi(cc_breathe_in));
     preferences.putUShort("cc_breathe_out", atoi(cc_breathe_out));
   }
-  
+
   // READ EEPROM
   pref_cc_breathe_in = preferences.getUShort("cc_breathe_in", 74);
   pref_cc_breathe_out = preferences.getUShort("cc_breathe_out", 2);
-  
+
   if (debugSerial) {
     Serial.println();
     Serial.println("Reading EEPROM");
@@ -132,64 +142,67 @@ void setup() {
 
 void loop() {
   startMillis = millis();
-  if(isConnectedW) {
+  if (isConnectedW) {
     // trying to search for touchosc bridge (via bonjour)
-    if(!touchoscbridgeFound) {
-        browseService("touchoscbridge", "udp");
+    if (!touchoscbridgeFound) {
+      browseService("touchoscbridge", "udp");
     } else {
       // found touchosc bridge, send sensors values via OSC midi
-      #if defined Accelerometer
+      if (useAccelerometerSensor) {
         readAccelerometer();
-      #endif
-
+      }
+      if (usePressureSensor) {
+        readCFSensor(0x6D);
+      }
       /*
-      // Example
-      uint8_t midi[4];
-      midi[0] = 0;
-      midi[1] = 99;
-      midi[2] = 10;  // expression
-      midi[3] = 176;
-      oscUdp.sendMessage("/midi",  "m",  midi);
+        // Example
+        uint8_t midi[4];
+        midi[0] = 0;
+        midi[1] = 99;
+        midi[2] = 10;  // expression
+        midi[3] = 176;
+        oscUdp.sendMessage("/midi",  "m",  midi);
       */
     }
   }
   while ((millis() - startMillis) < period);
+
 }
 
 
 // Bonjour
-void browseService(const char * service, const char * proto){
+void browseService(const char * service, const char * proto) {
+  if (debugSerial) {
+    Serial.printf("Browsing for service _%s._%s.local. ... ", service, proto);
+  }
+  int n = MDNS.queryService(service, proto);
+  if (n == 0) {
     if (debugSerial) {
-      Serial.printf("Browsing for service _%s._%s.local. ... ", service, proto);
+      Serial.println("no services found");
     }
-    int n = MDNS.queryService(service, proto);
-    if (n == 0) {
+  } else {
+
+    if (debugSerial) {
+      Serial.print(n);
+      Serial.println(" service(s) found");
+    }
+
+    for (int i = 0; i < n; ++i) {
+      oscUdp.setDestination(MDNS.IP(i), MDNS.port(i));
       if (debugSerial) {
-        Serial.println("no services found");
+        // Print details for each service found
+        Serial.print("  ");
+        Serial.print(i + 1);
+        Serial.print(": ");
+        Serial.print(MDNS.hostname(i));
+        Serial.print(" (");
+        Serial.print(MDNS.IP(i));
+        Serial.print(":");
+        Serial.print(MDNS.port(i));
+        Serial.println(")");
       }
-    } else {
-      
-        if (debugSerial) {
-          Serial.print(n);
-          Serial.println(" service(s) found");
-        }
-        
-        for (int i = 0; i < n; ++i) {
-            oscUdp.setDestination(MDNS.IP(i), MDNS.port(i));
-            if (debugSerial) {
-              // Print details for each service found
-              Serial.print("  ");
-              Serial.print(i + 1);
-              Serial.print(": ");
-              Serial.print(MDNS.hostname(i));
-              Serial.print(" (");
-              Serial.print(MDNS.IP(i));
-              Serial.print(":");
-              Serial.print(MDNS.port(i));
-              Serial.println(")");
-            }
-         }
-         touchoscbridgeFound = true;
-         
-      }
+    }
+    touchoscbridgeFound = true;
+
+  }
 }
