@@ -187,6 +187,8 @@ bool readAccelerometer() {
         Serial.println("double tap");
      }
      sendAccel = (sendAccel + 1) % 4;
+     // force send sensor (double tab = single tap detected after)
+     sendSensorData = false;
      
    }
  
