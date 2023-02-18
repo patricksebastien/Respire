@@ -110,7 +110,7 @@ bool readCFSensor(byte sensorAddress) {
   // BLOW
   if(press >= 0.70 && press <= 65.53) {
     blowValue = map(press, 0.70, 65.53, 0, 127);
-    if (debugSerial) {
+    if (debugSerial && sendSensorData) {
       Serial.print("blowValue : ");
       Serial.println(blowValue);  
     }
@@ -131,7 +131,7 @@ bool readCFSensor(byte sensorAddress) {
   //SUCK
   } else if(press <= 0.52 && press >= -57.10) {
     suckValue = map(press, 0.52, -57.10, 0, 127);
-    if (debugSerial) {
+    if (debugSerial && sendSensorData) {
       Serial.print("suckValue : ");
       Serial.println(suckValue);
     }

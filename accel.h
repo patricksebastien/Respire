@@ -117,6 +117,9 @@ bool readAccelerometer() {
     // midi[1] = aInty; not useful in my case
     switch (sendAccel) {
         case 0:
+          // default we don't send accel
+        break;
+        case 1:
           // x
           midi[0] = 0;
           midi[1] = aIntx;
@@ -124,16 +127,16 @@ bool readAccelerometer() {
           midi[3] = 176;
           oscUdp.sendMessage("/midi",  "m",  midi);
         break;
-        case 1:
-          // y
+        case 2:
+          // z
           midi[0] = 0;
           midi[1] = aIntz;
           midi[2] = 4; // breath controller
           midi[3] = 176;
           oscUdp.sendMessage("/midi",  "m",  midi);
         break;
-        case 2:
-          // all
+        case 3:
+          // send x and z (not y)
           midi[0] = 0;
           midi[1] = aIntx;
           midi[2] = 3;  // expression
@@ -145,22 +148,25 @@ bool readAccelerometer() {
           midi[2] = 4; // breath controller
           midi[3] = 176;
           oscUdp.sendMessage("/midi",  "m",  midi);
-        break;
+         break;
       }
   }
   
-  if (debugSerial) {
+  if (debugSerial && sendSensorData) {
     // Output x,y,z values
     switch (sendAccel) {
       case 0:
+        
+      break;
+      case 1:
         Serial.print("values of accel X: ");
         Serial.println(constrain(amIntx, 0, 127));
       break;
-      case 1:
-        Serial.print("values of y: ");
+      case 2:
+        Serial.print("values of z: ");
         Serial.println(aIntz);
       break;
-      case 2:
+      case 3:
         Serial.print("values of X , Z: ");
         Serial.print(aIntx);
         Serial.print(" , ");

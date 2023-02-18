@@ -3,7 +3,7 @@
 // todo pref for CC accel, filtering and calibration, split z,x to 4 cc
 
 // CONF
-bool useAccelerometerSensor = false;
+bool useAccelerometerSensor = true;
 bool usePressureSensor = true;
 bool useFiltering = false;
 bool debugSerial = false;
@@ -25,7 +25,7 @@ bool isConnectedW = false;
 bool touchoscbridgeFound = false;
 bool shouldSaveConfig = false;
 bool sendSensorData = true;
-int sendAccel = 2; // send xz
+int sendAccel = 0; // send xz
 IPAddress sendIp(192, 168, 0, 255); // <- default not really use, we are using Bonjour (mDNS) to find IP and PORT of touchoscbridge
 unsigned int sendPort = 12101; // <- touchosc port
 long startMillis = 0;
