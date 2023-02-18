@@ -2,6 +2,7 @@
 ADXL345 adxl; //variable adxl is an instance of the ADXL345 library
 double ax,ay,az; // actual acceleration on all axis
 int aIntx, aInty, aIntz; // Lose precision but hey it's MIDI!
+int amIntx, amInty, amIntz; // Lose precision but hey it's MIDI!
 int x,y,z; // pan tilt roll
 
 
@@ -93,21 +94,23 @@ void accelerometerSetup(){
 }
 
 bool readAccelerometer() {
-  
+
+  /*
   adxl.readXYZ(&x, &y, &z); //read the accelerometer values and store them in variables  x,y,z
   x = map(x,-320,320,0,127); // Should be 355 degrees but in practice I don't see values above 320...
   y = map(y,-320,320,0,127);
   z = map(z,-320,320,0,127);
-
+  */
+  
   double xyz[3];
   //double ax,ay,az;
   adxl.getAcceleration(xyz);
   aIntx = int(xyz[0] * 100);
   aInty = int(xyz[1] * 100);
   aIntz = int(xyz[2] * 100);
-  aIntx = map(aIntx,-200,200,0,127);
-  aInty = map(aInty,-200,200,0,127);
-  aIntz = map(aIntz,-200,200,0,127);
+  amIntx = map(aIntx,-110,57,0,127);
+  amInty = map(aInty,-200,200,0,127);
+  amIntz = map(aIntz,-200,200,0,127);
 
   uint8_t midi[4];
   if (sendSensorData) {
@@ -150,22 +153,16 @@ bool readAccelerometer() {
     // Output x,y,z values
     switch (sendAccel) {
       case 0:
-        Serial.print("values of X: ");
-        Serial.println(aIntx);
+        Serial.print("values of accel X: ");
+        Serial.println(constrain(amIntx, 0, 127));
       break;
       case 1:
         Serial.print("values of y: ");
-        Serial.println(aInty);
-      break;
-      case 2:
-        Serial.print("values of z: ");
         Serial.println(aIntz);
       break;
-      case 3:
-        Serial.print("values of X , Y , Z: ");
+      case 2:
+        Serial.print("values of X , Z: ");
         Serial.print(aIntx);
-        Serial.print(" , ");
-        Serial.print(aInty);
         Serial.print(" , ");
         Serial.println(aIntz);
       break;
@@ -177,21 +174,24 @@ bool readAccelerometer() {
     byte interrupts = adxl.getInterruptSource();
   
    //double tap
+   //use as a modulo for selecting accelerometer output
+   //0 - x, 1 - z, 2 - xz, 3 none
    if(adxl.triggered(interrupts, ADXL345_DOUBLE_TAP)){
      if (debugSerial) {
         Serial.println("double tap");
      }
-     sendSensorData = !sendSensorData;
+     sendAccel = (sendAccel + 1) % 4;
+     
    }
  
-   //tap
+   //single tap
+   //use to stop sending sensor values (useful to freeze position)
    if(adxl.triggered(interrupts, ADXL345_SINGLE_TAP)){
     // send only x, y, z or all of them (pressure sensor is always sent)
     if (debugSerial) {
       Serial.println("single tap");
     }
-    //sendSensorData = !sendSensorData;
-    sendAccel = (sendAccel + 1) % 4;
+    sendSensorData = !sendSensorData;
    } 
   
   return 0;

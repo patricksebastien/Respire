@@ -100,47 +100,48 @@ bool readCFSensor(byte sensorAddress) {
     press = float(pressure24bit) * 0.0000078125;                        //KPa positive pressure calculation
   }
 
-  if(!(press >= 65.53) && (press >= 0.48 || press <= 0.34)) { // no calibration, just by observation when not touching the sensor
+  // press values are:
+  // hole in tube = noise with blowing
+  // rest around +0.56 <-> +0.63 (with hole in tube, without it's higher like 0.70
+  // blow: +0.63 -> max = 65.54 -> over blow = -57.11 (move quickly to this value)
+  // suck: +0.56 -> -57.11 -> max 65.54 (move quickly to this value) -> over suck = -57.11 (move quickly to this value)
+  // rest and max (we omit the quick move between 65.54 & -57.11)
+
+  // BLOW
+  if(press >= 0.70 && press <= 65.53) {
+    blowValue = map(press, 0.70, 65.53, 0, 127);
+    if (debugSerial) {
+      Serial.print("blowValue : ");
+      Serial.println(blowValue);  
+    }
+    if(sendSensorData) {
+      uint8_t midi[4];
+      midi[0] = storedBlowChanInt;
+      // filter not really useful if not using a hole in tube
+      if(useFiltering) {
+        midi[1] = ema_filter(blowValue, ptrblow);
+      } else {
+        midi[1] = blowValue;
+      }
+      midi[2] = 2; // breath controller
+      midi[3] = 176;
+      oscUdp.sendMessage("/midi",  "m",  midi);
+    }
     
-    if(press <= 0.34) { //weird when going full blast it jumps to 65.54 (from -)
-      
-        suckValue = map(press, -65.53, 0.34, 127, 0);
-
-        // let's do better (keeping a few last values to see if we are indeed blowing
-        if(suckValue != 0) {
-          if (debugSerial) {
-            Serial.print("suckValue : ");
-            Serial.println(suckValue);
-          }
-          if(sendSensorData) {
-            uint8_t midi[4];
-            midi[0] = storedSuckChanInt;      // midi channel // 90 + midi channel (note on)
-            midi[1] = suckValue; // SensorValue  // velocity
-            midi[2] = 1;     // Control Change message (11 is expression) // Pitch (note value)
-            midi[3] = 176;     // Extra                                       
-            oscUdp.sendMessage("/midi",  "m",  midi); // send to Udp server
-          }
-        }
-        
-    } else if(press >= 0.48) {
-      
-        blowValue = map(press, 0.48, 65.53, 0, 127);
-
-        // let's do better (keeping a few last values to see if we are indeed blowing
-        if(blowValue != 0) {
-          if (debugSerial) {
-            Serial.print("blowValue : ");
-            Serial.println(blowValue);  
-          }
-          if(sendSensorData) {
-            uint8_t midi[4];
-            midi[0] = storedBlowChanInt;
-            midi[1] = ema_filter(blowValue, ptrblow);
-            midi[2] = 2; // breath controller
-            midi[3] = 176;
-            oscUdp.sendMessage("/midi",  "m",  midi);
-          }
-        }
+  //SUCK
+  } else if(press <= 0.52 && press >= -57.10) {
+    suckValue = map(press, 0.52, -57.10, 0, 127);
+    if (debugSerial) {
+      Serial.print("suckValue : ");
+      Serial.println(suckValue);
+    }
+    if(sendSensorData) {
+      uint8_t midi[4];
+      midi[0] = storedSuckChanInt;      // midi channel // 90 + midi channel (note on)
+      midi[1] = suckValue; // SensorValue  // velocity
+      midi[2] = 1;     // Control Change message (11 is expression) // Pitch (note value)
+      midi[3] = 176;     // Extra                                       
+      oscUdp.sendMessage("/midi",  "m",  midi); // send to Udp server
     }
   }
   return 0;

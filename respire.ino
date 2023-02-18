@@ -1,7 +1,11 @@
+// arduino 1.8.19
+// esp32 1.6
 // todo pref for CC accel, filtering and calibration, split z,x to 4 cc
 
-bool useAccelerometerSensor = true;
+// CONF
+bool useAccelerometerSensor = false;
 bool usePressureSensor = true;
+bool useFiltering = false;
 bool debugSerial = false;
 bool forcePortal = false;
 const long period = 5; //time between samples in milliseconds - 5
@@ -21,7 +25,7 @@ bool isConnectedW = false;
 bool touchoscbridgeFound = false;
 bool shouldSaveConfig = false;
 bool sendSensorData = true;
-int sendAccel = 2; // send xyz
+int sendAccel = 2; // send xz
 IPAddress sendIp(192, 168, 0, 255); // <- default not really use, we are using Bonjour (mDNS) to find IP and PORT of touchoscbridge
 unsigned int sendPort = 12101; // <- touchosc port
 long startMillis = 0;
@@ -30,7 +34,7 @@ MicroOscUdp<1024> oscUdp(&udp, sendIp, sendPort);
 Preferences preferences;
 uint16_t *ptrblow;
 
-//define your default values here
+
 char cc_breathe_in[40];
 char cc_breathe_out[40];
 unsigned short pref_cc_breathe_out;
@@ -53,11 +57,17 @@ void setup() {
   }
   preferences.begin("respire", false);
 
+  // not use for now
   pinMode(TRIGGER_PIN, INPUT_PULLUP);
 
   // filter
-  ptrblow = ms_init(EMA);
-  if(ptrblow == NULL) Serial.println("***************No memory*******************8");
+  if(useFiltering) {
+    ptrblow = ms_init(EMA);
+    delay(100);
+    if(ptrblow == NULL) {
+      Serial.println("***************No memory*******************");
+    }
+  }
 
   if (useAccelerometerSensor) {
     accelerometerSetup();
